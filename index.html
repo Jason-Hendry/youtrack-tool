@@ -24,8 +24,6 @@
 <div class="container">
     <div class="row">
         <div class="col-md-6">
-            <button class="btn btn-default" id="login">Login to YouTrack</button>
-            <button class="btn btn-default" id="load">Load Projects</button>
             <h2>Ticker Loader</h2>
             <form id="loader" class="form">
                 <div class="form-group">
@@ -51,25 +49,19 @@
 
 <script>
     $(document).ready(function () {
-        $('#login').click(function () {
-            window.open("https://portable.myjetbrains.com/hub/api/rest/oauth2/auth?response_type=code&state=1redirect_uri=http%3A%2F%2Flocalhost%2Fauth&request_credentials=default&client_id=236afb61-8d1d-4368-84ae-246dd5d91779&scope=0-0-0-0-0%20c844906d-ceff-4800-8ae6-00adfbde4a15")
-        });
-
-
-        $('#load').click(function () {
-            $.get('/projects', function (data) {
-                for (i in data) {
-                    if (data.hasOwnProperty(i)) {
-                        $('#project').append($('<option value="' + data[i].code + '">' + data[i].name + '</option>'));
-                    }
+        $.get('/projects', function (data) {
+            for (i in data) {
+                if (data.hasOwnProperty(i)) {
+                    $('#project').append($('<option value="' + data[i].code + '">' + data[i].name + '</option>'));
                 }
-            });
+            }
         });
 
         $('#loader').on('submit', function(e) {
             e.preventDefault();
             $.post('/create', $(this).serializeArray(), function(data) {
                 console.log(data);
+                $('#newTickets').val("");
             });
         })
 

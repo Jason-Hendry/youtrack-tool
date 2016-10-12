@@ -1,0 +1,6 @@
+redis:
+  image: redis:alpine
+  volumes:
+    - "$PWD/data:/data"
+  ports:
+    - "6380:6379"

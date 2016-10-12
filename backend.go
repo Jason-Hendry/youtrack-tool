@@ -11,7 +11,12 @@ import (
 	"bytes"
 	"encoding/xml"
 	"strings"
+	"math/rand"
+	"github.com/mediocregopher/radix.v2/pool"
 )
+
+const SESSION_COOKIE  = "YTTOOLSESS"
+const SESSION_TOKEN_FIELD  = "access_token"
 
 var ytCookies []*http.Cookie;
 
@@ -23,15 +28,33 @@ var ytSecret string;
 
 var ytCode string;
 
-var ytAccessToken string;
+var redisPool *pool.Pool
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
-	index, _ := ioutil.ReadFile("index.html")
-	fmt.Fprint(w, string(index));
+
+	if !hasSession(r) {
+		startSession(w);
+		index, _ := ioutil.ReadFile("login.html")
+		fmt.Fprint(w, string(index));
+		return;
+	}
+
+	if sessionGet(r, SESSION_TOKEN_FIELD) == "" {
+		index, _ := ioutil.ReadFile("login.html")
+		fmt.Fprint(w, string(index));
+	} else {
+		fmt.Printf("AccessToken: %s\n", sessionGet(r, SESSION_TOKEN_FIELD))
+		index, _ := ioutil.ReadFile("index.html")
+		fmt.Fprint(w, string(index));
+	}
+
 }
 func auth(w http.ResponseWriter, r *http.Request) {
 	//body,_ := ioutil.ReadAll(r.Body)
 	//r.Body.Close();
+	if !hasSession(r) {
+		startSession(w);
+	}
 
 	query := r.URL.Query();
 
@@ -42,7 +65,7 @@ func auth(w http.ResponseWriter, r *http.Request) {
 	authData := url.Values{}
 	authData.Add("grant_type", "authorization_code")
 	authData.Add("code", ytCode)
-	authData.Add("redirect_uri", "http://localhost:8080/")
+	authData.Add("redirect_uri", "http://"+r.Host+":8080/")
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte(ytId + ":" + ytSecret))
 
@@ -71,18 +94,75 @@ func auth(w http.ResponseWriter, r *http.Request) {
 
 	json.Unmarshal(respBody, authResp)
 
-	ytAccessToken = authResp.AccessToken
-	ioutil.WriteFile(".session", []byte(ytAccessToken), os.FileMode(0755))
+	ytAccessToken := authResp.AccessToken
+
+	sessionSet(r, SESSION_TOKEN_FIELD, ytAccessToken)
+
+	//ioutil.WriteFile(".session", []byte(ytAccessToken), os.FileMode(0755))
 	fmt.Printf("Token: %s\n", authResp.AccessToken)
 
 	resp.Body.Close()
+
+
+	w.Header().Add("Location", "/")
+	w.WriteHeader(http.StatusFound);
 
 	//index,_ := ioutil.ReadFile("index.html")
 	//fmt.Fprint(w, string(index));
 }
 
+func startSession(w http.ResponseWriter) string {
+	sessionKey := RandStringBytesMaskImpr(30);
+	sessionCookie := http.Cookie{
+		Name:SESSION_COOKIE,
+		MaxAge:3600,
+		Value:sessionKey,
+	}
+	w.Header().Add("Set-Cookie", sessionCookie.String())
+	return sessionKey
+}
+
+func hasSession(r *http.Request) bool {
+	cookie,err := r.Cookie(SESSION_COOKIE);
+	if err != nil || cookie.Value == "" {
+		return false;
+	}
+	return true;
+}
+
+func sessionGet(r *http.Request, field string) string {
+	if hasSession(r) {
+		cookie,_ := r.Cookie(SESSION_COOKIE);
+		redisClient,_ := redisPool.Get()
+		resp := redisClient.Cmd("HGET", cookie.Value, field)
+		if resp.Err == nil {
+			str,_ := resp.Str()
+			return str
+		}
+	}
+	return ""
+}
+func sessionSet(r *http.Request, field, value string) string {
+	if hasSession(r) {
+		cookie,_ := r.Cookie(SESSION_COOKIE);
+		redisClient,_ := redisPool.Get()
+		fmt.Printf("\nSave cookie value: %s:%s = %s\n\n", cookie.Value, field, value)
+		resp := redisClient.Cmd("HSET", cookie.Value, field, value)
+		if resp.Err == nil {
+			return resp.String()
+		}
+	}
+	return ""
+}
+
 func findProjects(w http.ResponseWriter, r *http.Request) {
 
+
+	if !hasSession(r) {
+		fmt.Fprint(w, "403 Access Denied")
+		return
+	}
+	ytAccessToken := sessionGet(r, SESSION_TOKEN_FIELD)
 	if ytAccessToken == "" {
 		fmt.Fprint(w, "403 Access Denied")
 		return
@@ -118,6 +198,16 @@ func findProjects(w http.ResponseWriter, r *http.Request) {
 
 func createTickets(w http.ResponseWriter, r *http.Request) {
 
+	if !hasSession(r) {
+		fmt.Fprint(w, "403 Access Denied")
+		return
+	}
+	ytAccessToken := sessionGet(r, SESSION_TOKEN_FIELD)
+	if ytAccessToken == "" {
+		fmt.Fprint(w, "403 Access Denied")
+		return
+	}
+
 	r.ParseForm()
 
 	project := r.Form.Get("project");
@@ -128,11 +218,6 @@ func createTickets(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("New %s %s\n", project, ticket)
 	}
 	//r.Body.Close()
-
-	if ytAccessToken == "" {
-		fmt.Fprint(w, "403 Access Denied")
-		return
-	}
 
 	httpClient := http.Client{};
 
@@ -167,16 +252,37 @@ type Projects struct {
 	Project []Project `xml:"project"`
 }
 
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const (
+	letterIdxBits = 6                    // 6 bits to represent a letter index
+	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
+	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
+)
+
+func RandStringBytesMaskImpr(n int) string {
+	b := make([]byte, n)
+	// A rand.Int63() generates 63 random bits, enough for letterIdxMax letters!
+	for i, cache, remain := n-1, rand.Int63(), letterIdxMax; i >= 0; {
+		if remain == 0 {
+			cache, remain = rand.Int63(), letterIdxMax
+		}
+		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
+			b[i] = letterBytes[idx]
+			i--
+		}
+		cache >>= letterIdxBits
+		remain--
+	}
+
+	return string(b)
+}
+
 func main() {
+
+	redisPool,_ = pool.New("tcp",os.Getenv("YTTOOL_REDIS"), 5);
+
 	ytId = os.Getenv("YTTOOL_ID");
 	ytSecret = os.Getenv("YTTOOL_SECRET");
-	_, err := os.Stat(".session")
-	if err == nil {
-		token, _ := ioutil.ReadFile(".session")
-		ytAccessToken = string(token);
-	} else {
-		ytAccessToken = ""
-	}
 
 	port := os.Getenv("YTTOOL_PORT")
 	ytURL = os.Getenv("YTTOOL_URL")
