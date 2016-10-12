@@ -28,7 +28,7 @@
 <script>
     $(document).ready(function () {
         $('#login').click(function () {
-            window.location = "https://portable.myjetbrains.com/hub/api/rest/oauth2/auth?response_type=code&state=1redirect_uri=http%3A%2F%2F192.168.0.13:8080%2Fauth&request_credentials=default&client_id=236afb61-8d1d-4368-84ae-246dd5d91779&scope=0-0-0-0-0%20c844906d-ceff-4800-8ae6-00adfbde4a15"
+            window.location = "https://portable.myjetbrains.com/hub/api/rest/oauth2/auth?response_type=code&state=1redirect_uri=http%3A%2F%2F"+(window.location.host)+"%2Fauth&request_credentials=default&client_id=##ClientID##&scope=0-0-0-0-0%20##YTSCOPE##"
         });
 
     });

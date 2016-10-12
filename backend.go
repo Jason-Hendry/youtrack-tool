@@ -19,15 +19,11 @@ const SESSION_COOKIE  = "YTTOOLSESS"
 const SESSION_TOKEN_FIELD  = "access_token"
 
 var ytCookies []*http.Cookie;
-
 var ytURL string;
-
 var ytId string;
-
 var ytSecret string;
-
 var ytCode string;
-
+var ytYouTrackScope string;
 var redisPool *pool.Pool
 
 func serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -35,13 +31,16 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 	if !hasSession(r) {
 		startSession(w);
 		index, _ := ioutil.ReadFile("login.html")
-		fmt.Fprint(w, string(index));
+		indexHTML := strings.Replace(string(index), "##ClientID##", ytId, -1)
+		indexHTML = strings.Replace(indexHTML, "##YTSCOPE##", ytYouTrackScope, -1)
+		fmt.Fprint(w, indexHTML);
 		return;
 	}
-
 	if sessionGet(r, SESSION_TOKEN_FIELD) == "" {
 		index, _ := ioutil.ReadFile("login.html")
-		fmt.Fprint(w, string(index));
+		indexHTML := strings.Replace(string(index), "##ClientID##", ytId, -1)
+		indexHTML = strings.Replace(indexHTML, "##YTSCOPE##", ytYouTrackScope, -1)
+		fmt.Fprint(w, indexHTML);
 	} else {
 		fmt.Printf("AccessToken: %s\n", sessionGet(r, SESSION_TOKEN_FIELD))
 		index, _ := ioutil.ReadFile("index.html")
@@ -283,6 +282,7 @@ func main() {
 
 	ytId = os.Getenv("YTTOOL_ID");
 	ytSecret = os.Getenv("YTTOOL_SECRET");
+	ytYouTrackScope = os.Getenv("YTTOOL_SCOPE");
 
 	port := os.Getenv("YTTOOL_PORT")
 	ytURL = os.Getenv("YTTOOL_URL")
